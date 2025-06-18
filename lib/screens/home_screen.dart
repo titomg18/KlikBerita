@@ -26,33 +26,111 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
-  // Memuat data berita dan kategori
+  // Tambahkan method debug
+  Future<void> _debugConnection() async {
+    print('🔧 Starting debug from HomeScreen...');
+    
+    // Cek database data
+    await NewsService.checkDatabaseData();
+    
+    // Test loading data
+    print('🔧 Testing data loading...');
+    try {
+      final news = await NewsService.getAllNews();
+      print('✅ Loaded ${news.length} news items');
+      if (news.isNotEmpty) {
+        print('📰 First news: ${news.first.title}');
+        print('📰 Is this mock data? ${news.first.id == '1' ? 'YES (Mock Data)' : 'NO (Real Data from PocketBase)'}');
+      }
+    } catch (e) {
+      print('❌ Error loading news: $e');
+    }
+  }
+
+  // Perbaiki method _loadData dengan debugging yang lebih baik
   Future<void> _loadData() async {
+    print('🔄 HomeScreen: Starting to load data...');
+    print('👤 User logged in: ${AuthService.isLoggedIn}');
+    if (AuthService.isLoggedIn) {
+      print('👤 User: ${AuthService.currentUser?.getStringValue('name')} (${AuthService.currentUser?.getStringValue('email')})');
+    }
+    
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Load categories dari PocketBase
+      // Debug connection first
+      print('🔍 Testing PocketBase connection...');
+      final connectionTest = await NewsService.testConnection();
+      print('🔍 Connection test result: ${connectionTest['success']}');
+      
+      if (!connectionTest['success']) {
+        print('⚠️ Connection failed, details: ${connectionTest['message']}');
+        if (connectionTest['error'] == 'PERMISSION_DENIED') {
+          print('💡 This is a permission issue - will use appropriate data based on login status');
+        }
+      }
+      
+      // Load categories
+      print('📂 Loading categories...');
       final categories = await NewsService.getCategories();
+      print('📂 Loaded ${categories.length} categories: $categories');
+      
+      // Load news (akan otomatis menggunakan mock data jika user belum login atau ada error)
+      print('📰 Loading news...');
       final news = await NewsService.getAllNews();
+      print('📰 Loaded ${news.length} news items');
+      
+      // Check if we got real data or mock data
+      if (news.isNotEmpty) {
+        final isRealData = news.first.id != '1'; // Mock data always starts with id '1'
+        print('📰 Data source: ${isRealData ? 'PocketBase (Real Data)' : 'Mock Data'}');
+        
+        if (!isRealData && AuthService.isLoggedIn) {
+          print('⚠️ User is logged in but still getting mock data - there might be a permission issue');
+        }
+      }
       
       setState(() {
         _categories = categories;
         _news = news;
         _isLoading = false;
       });
+      
+      print('✅ Data loading completed successfully');
+      
+      // Show success message if user is logged in and got real data
+      if (AuthService.isLoggedIn && news.isNotEmpty && news.first.id != '1') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Berhasil memuat ${news.length} berita dari database'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      
     } catch (e) {
+      print('❌ Error in _loadData: $e');
+      print('📝 Error type: ${e.runtimeType}');
+      
       setState(() {
         _isLoading = false;
         // Fallback ke kategori default jika gagal
         _categories = NewsService.getDefaultCategories();
+        _news = []; // Kosongkan news jika error
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gagal memuat berita: $e'),
           backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'DEBUG',
+            textColor: Colors.white,
+            onPressed: _debugConnection,
+          ),
         ),
       );
     }
@@ -245,6 +323,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                
+                // Badge untuk menunjukkan sumber data
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: news.id == '1' || news.id == '2' || news.id == '3' || news.id == '4' || news.id == '5' 
+                          ? Colors.orange.withOpacity(0.9) 
+                          : Colors.green.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      news.id == '1' || news.id == '2' || news.id == '3' || news.id == '4' || news.id == '5' 
+                          ? 'DEMO' 
+                          : 'LIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             
@@ -395,6 +498,13 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.blue[600],
         elevation: 0,
         actions: [
+          // Debug button (hanya tampil di development)
+          IconButton(
+            icon: Icon(Icons.bug_report, color: Colors.white),
+            onPressed: _debugConnection,
+            tooltip: 'Debug Connection',
+          ),
+          
           // Profile button (only show if logged in)
           if (AuthService.isLoggedIn)
             Stack(
@@ -503,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Login untuk fitur lengkap',
+                            'Login untuk mengakses berita dari database',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -517,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               MaterialPageRoute(builder: (context) => LoginScreen()),
                             ).then((_) {
                               setState(() {});
+                              _loadData(); // Reload data after login
                             });
                           },
                           style: TextButton.styleFrom(
@@ -535,7 +646,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text(
                     AuthService.isLoggedIn 
                         ? 'Selamat datang, ${AuthService.currentUser?.getStringValue('name') ?? 'User'}!'
-                        : 'Berita Terkini Indonesia',
+                        : 'Berita Demo - Login untuk data real',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -625,6 +736,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         CircularProgressIndicator(),
                         SizedBox(height: 16),
                         Text('Memuat berita...'),
+                        if (AuthService.isLoggedIn) ...[
+                          SizedBox(height: 8),
+                          Text(
+                            'Mengambil data dari PocketBase',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   )
@@ -648,10 +769,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             SizedBox(height: 8),
                             Text(
-                              'Coba refresh atau pilih kategori lain',
+                              AuthService.isLoggedIn 
+                                  ? 'Tambahkan berita di PocketBase atau coba refresh'
+                                  : 'Login untuk mengakses berita dari database',
                               style: TextStyle(
                                 color: Colors.grey[500],
                               ),
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),

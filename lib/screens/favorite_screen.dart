@@ -46,18 +46,22 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
   Future<void> _removeFromFavorite(NewsModel news) async {
     try {
       await FavoriteService.removeFromFavorite(news.id);
-      await _loadFavoriteNews(); // Refresh list
+      
+      setState(() {
+        _favoriteNews.removeWhere((item) => item.id == news.id);
+      });
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Berita dihapus dari favorit 💔'),
+          content: Text('${news.title} dihapus dari favorit'),
           backgroundColor: Colors.orange,
           action: SnackBarAction(
-            label: 'UNDO',
+            label: 'BATAL',
             textColor: Colors.white,
             onPressed: () async {
+              // Re-add to favorites
               await FavoriteService.addToFavorite(news);
-              await _loadFavoriteNews();
+              _loadFavoriteNews();
             },
           ),
         ),
@@ -69,66 +73,6 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
           backgroundColor: Colors.red,
         ),
       );
-    }
-  }
-
-  Future<void> _clearAllFavorites() async {
-    // Tampilkan dialog konfirmasi
-    final shouldClear = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Hapus Semua Favorit'),
-        content: Text('Apakah Anda yakin ingin menghapus semua berita favorit?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text('Hapus Semua'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldClear == true) {
-      try {
-        await FavoriteService.clearAllFavorites();
-        await _loadFavoriteNews();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Semua favorit telah dihapus'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal menghapus favorit: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Color _getCategoryColor(String category) {
-    switch (category.toLowerCase()) {
-      case 'teknologi':
-        return Colors.blue;
-      case 'olahraga':
-        return Colors.green;
-      case 'ekonomi':
-        return Colors.orange;
-      case 'pendidikan':
-        return Colors.purple;
-      case 'wisata':
-        return Colors.teal;
-      default:
-        return Colors.grey;
     }
   }
 
@@ -160,7 +104,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
               builder: (context) => NewsDetailScreen(newsId: news.id),
             ),
           ).then((_) {
-            // Refresh UI ketika kembali dari detail screen
+            // Refresh favorites when returning from detail screen
             _loadFavoriteNews();
           });
         },
@@ -168,31 +112,44 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Gambar berita dengan tombol remove
+            // Image with favorite button
             Stack(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
                   child: Image.network(
                     news.imageUrl,
-                    height: 200,
+                    height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
-                        height: 200,
+                        height: 180,
                         color: Colors.grey[300],
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 50,
-                          color: Colors.grey[600],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.image_not_supported,
+                              size: 50,
+                              color: Colors.grey[600],
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Gambar tidak tersedia',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       );
                     },
                   ),
                 ),
                 
-                // Tombol remove dari favorit
+                // Remove from favorite button
                 Positioned(
                   top: 8,
                   right: 8,
@@ -219,38 +176,6 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                     ),
                   ),
                 ),
-                
-                // Badge favorit di pojok kiri atas
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.favorite,
-                          color: Colors.white,
-                          size: 12,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Favorit',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
             
@@ -259,22 +184,33 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Kategori dan waktu
+                  // Category and time
                   Row(
                     children: [
                       Container(
                         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _getCategoryColor(news.category),
+                          color: news.getCategoryColor(),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text(
-                          news.category,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              news.getCategoryIcon(),
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              news.category,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       Spacer(),
@@ -290,7 +226,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                   
                   SizedBox(height: 12),
                   
-                  // Judul berita
+                  // Title
                   Text(
                     news.title,
                     style: TextStyle(
@@ -304,7 +240,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                   
                   SizedBox(height: 8),
                   
-                  // Deskripsi berita
+                  // Description
                   Text(
                     news.description,
                     style: TextStyle(
@@ -318,7 +254,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                   
                   SizedBox(height: 12),
                   
-                  // Author dan source
+                  // Author and source
                   Row(
                     children: [
                       Icon(
@@ -380,85 +316,121 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
         actions: [
           if (_favoriteNews.isNotEmpty)
             IconButton(
-              icon: Icon(Icons.delete_sweep, color: Colors.white),
-              onPressed: _clearAllFavorites,
-              tooltip: 'Hapus Semua Favorit',
+              icon: Icon(Icons.delete_sweep),
+              onPressed: () async {
+                final shouldClear = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text('Hapus Semua Favorit'),
+                    content: Text('Apakah Anda yakin ingin menghapus semua berita favorit?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: Text('Batal'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: TextButton.styleFrom(foregroundColor: Colors.red),
+                        child: Text('Hapus Semua'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (shouldClear == true) {
+                  await FavoriteService.clearAllFavorites();
+                  _loadFavoriteNews();
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Semua favorit telah dihapus'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              },
+              tooltip: 'Hapus semua favorit',
             ),
         ],
       ),
-      body: Column(
-        children: [
-          // Header info
-          Container(
-            color: Colors.red[600],
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text(
-              _favoriteNews.isEmpty 
-                  ? 'Belum ada berita favorit'
-                  : '${_favoriteNews.length} berita favorit',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
+      body: _isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red[600]!),
+                  ),
+                  SizedBox(height: 16),
+                  Text('Memuat berita favorit...'),
+                ],
               ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          
-          // Konten favorit
-          Expanded(
-            child: _isLoading
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: Colors.red[600]),
-                        SizedBox(height: 16),
-                        Text('Memuat berita favorit...'),
-                      ],
-                    ),
-                  )
-                : _favoriteNews.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.favorite_border,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'Belum Ada Berita Favorit',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Tap ikon ❤️ pada berita untuk menambahkan ke favorit',
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            SizedBox(height: 24),
-                            ElevatedButton.icon(
-                              onPressed: () => Navigator.pop(context),
-                              icon: Icon(Icons.arrow_back),
-                              label: Text('Kembali ke Beranda'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red[600],
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ],
+            )
+          : _favoriteNews.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.favorite_border,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Belum ada berita favorit',
+                        style: TextStyle(
+                          fontSize: 20,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
                         ),
-                      )
-                    : RefreshIndicator(
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Tambahkan berita ke favorit dengan menekan ikon ❤️',
+                        style: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(Icons.explore),
+                        label: Text('Jelajahi Berita'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red[600],
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    // Header info
+                    Container(
+                      width: double.infinity,
+                      color: Colors.red[600],
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Text(
+                        '${_favoriteNews.length} berita favorit',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    
+                    // List of favorite news
+                    Expanded(
+                      child: RefreshIndicator(
                         onRefresh: _loadFavoriteNews,
                         child: ListView.builder(
                           padding: EdgeInsets.symmetric(vertical: 8),
@@ -468,9 +440,9 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                           },
                         ),
                       ),
-          ),
-        ],
-      ),
+                    ),
+                  ],
+                ),
     );
   }
 }

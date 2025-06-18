@@ -2,10 +2,24 @@ import 'package:flutter/material.dart';
 import 'services/Auth.dart';
 import 'screens/home_screen.dart';
 import 'screens/Auth/login_screen.dart';
+import 'services/news_service.dart'; // Perbaiki dari 'services/NewsService.dart'
 
-void main() {
+void main() async {
+  // Ensure Flutter binding is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  print('🚀 Starting KlikBerita App...');
+  
   // Initialize AuthService
   AuthService.initialize();
+  
+  // Debug PocketBase connection on startup
+  print('🔧 Running initial debug check...');
+  try {
+    await NewsService.debugPocketBase();
+  } catch (e) {
+    print('❌ Initial debug failed: $e');
+  }
   
   runApp(const KlikBeritaApp());
 }

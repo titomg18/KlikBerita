@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart'; // Import ini yang kurang!
+import 'package:flutter/material.dart';
 
 class NewsModel {
   final String id;
@@ -25,40 +25,120 @@ class NewsModel {
 
   // Factory constructor untuk membuat NewsModel dari PocketBase Record
   factory NewsModel.fromPocketBase(dynamic record) {
-    // Extract data dari PocketBase record
-    final String newsContent = record.getStringValue('news') ?? '';
-    final String newsDetail = record.getStringValue('news_detail') ?? '';
-    final String imageFile = record.getStringValue('Gambar') ?? '';
-    final String category = record.getStringValue('category') ?? 'Umum'; // Field category terpisah
-    
-    // Parse title, author, dan source dari field news
-    List<String> newsParts = newsContent.split('|');
-    String title = newsParts.isNotEmpty ? newsParts[0].trim() : 'Judul Berita';
-    String author = newsParts.length > 1 ? newsParts[1].trim() : 'Admin';
-    String source = newsParts.length > 2 ? newsParts[2].trim() : 'KlikBerita';
-    
-    // Generate description dari news_detail (ambil 150 karakter pertama)
-    String description = newsDetail.length > 150 
-        ? '${newsDetail.substring(0, 150)}...'
-        : newsDetail;
-    
-    // Generate image URL dari PocketBase
-    String baseUrl = 'http://127.0.0.1:8090'; // Sesuaikan dengan server Anda
-    String imageUrl = imageFile.isNotEmpty 
-        ? '$baseUrl/api/files/berita/${record.id}/$imageFile'
-        : 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&h=400&fit=crop'; // Default image
-    
-    return NewsModel(
-      id: record.id,
-      title: title,
-      description: description,
-      content: newsDetail,
-      imageUrl: imageUrl,
-      category: category, // Gunakan field category langsung
-      author: author,
-      publishedAt: DateTime.parse(record.getStringValue('created')),
-      source: source,
-    );
+    try {
+      // Extract data dari PocketBase record sesuai struktur collection 'berita'
+      final String newsTitle = record.getStringValue('berita') ?? 'Judul Berita';
+      final String newsContent = record.getStringValue('detail_berita') ?? '';
+      final String imageFile = record.getStringValue('Gambar') ?? '';
+      final String category = record.getStringValue('category') ?? 'Umum';
+      
+      // Parse author dan source dari title jika menggunakan format "Title|Author|Source"
+      String cleanTitle = newsTitle;
+      String author = 'Admin KlikBerita';
+      String source = 'KlikBerita';
+      
+      if (newsTitle.contains('|')) {
+        List<String> parts = newsTitle.split('|');
+        cleanTitle = parts[0].trim();
+        if (parts.length >= 2) {
+          author = parts[1].trim();
+        }
+        if (parts.length >= 3) {
+          source = parts[2].trim();
+        }
+      }
+      
+      // Generate description dari content (ambil 200 karakter pertama)
+      String description = '';
+      if (newsContent.isNotEmpty) {
+        // Remove HTML tags if any and get first 200 characters
+        String cleanContent = newsContent.replaceAll(RegExp(r'<[^>]*>'), '');
+        description = cleanContent.length > 200 
+            ? '${cleanContent.substring(0, 200)}...'
+            : cleanContent;
+      }
+      
+      // Generate image URL dari PocketBase
+      String baseUrl = 'http://127.0.0.1:8090'; // Sesuaikan dengan server Anda
+      String imageUrl = '';
+      
+      if (imageFile.isNotEmpty) {
+        // Fix: Use the correct collection name directly
+        imageUrl = '$baseUrl/api/files/berita/${record.id}/$imageFile';
+      } else {
+        // Use default image based on category
+        imageUrl = _getDefaultImageByCategory(category);
+      }
+      
+      // Parse created date
+      DateTime publishedAt;
+      try {
+        publishedAt = DateTime.parse(record.getStringValue('created'));
+      } catch (e) {
+        publishedAt = DateTime.now();
+      }
+      
+      return NewsModel(
+        id: record.id,
+        title: cleanTitle,
+        description: description,
+        content: newsContent,
+        imageUrl: imageUrl,
+        category: category,
+        author: author,
+        publishedAt: publishedAt,
+        source: source,
+      );
+    } catch (e) {
+      print('❌ Error parsing PocketBase record: $e');
+      // Return a default NewsModel to prevent crashes
+      return NewsModel(
+        id: record.id ?? 'unknown',
+        title: 'Error Loading News',
+        description: 'Terjadi kesalahan saat memuat berita',
+        content: 'Konten tidak dapat dimuat',
+        imageUrl: _getDefaultImageByCategory('Umum'),
+        category: 'Umum',
+        author: 'System',
+        publishedAt: DateTime.now(),
+        source: 'KlikBerita',
+      );
+    }
+  }
+
+  // Helper method untuk mendapatkan default image berdasarkan kategori
+  static String _getDefaultImageByCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'teknologi':
+        return 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=400&fit=crop';
+      case 'olahraga':
+        return 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&h=400&fit=crop';
+      case 'ekonomi':
+        return 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&h=400&fit=crop';
+      case 'pendidikan':
+        return 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&h=400&fit=crop';
+      case 'wisata':
+        return 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop';
+      case 'politik':
+        return 'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=800&h=400&fit=crop';
+      case 'kesehatan':
+        return 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=800&h=400&fit=crop';
+      case 'hiburan':
+        return 'https://images.unsplash.com/photo-1489599904472-af1b7f54a3ef?w=800&h=400&fit=crop';
+      default:
+        return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&h=400&fit=crop';
+    }
+  }
+
+  // Alternative method to generate PocketBase image URL
+  static String generatePocketBaseImageUrl({
+    required String baseUrl,
+    required String collectionName,
+    required String recordId,
+    required String fileName,
+  }) {
+    if (fileName.isEmpty) return _getDefaultImageByCategory('Umum');
+    return '$baseUrl/api/files/$collectionName/$recordId/$fileName';
   }
 
   // Factory constructor untuk membuat NewsModel dari JSON (backward compatibility)
@@ -94,9 +174,9 @@ class NewsModel {
   // Method untuk convert ke PocketBase format
   Map<String, dynamic> toPocketBase() {
     return {
-      'news': '$title|$author|$source', // Tidak perlu category di sini lagi
-      'news_detail': content,
-      'category': category, // Field category terpisah
+      'berita': '$title|$author|$source',
+      'detail_berita': content,
+      'category': category,
       // Gambar akan dihandle terpisah sebagai file upload
     };
   }
@@ -205,6 +285,52 @@ class NewsModel {
         return ['Olahraga', 'Wisata'];
       default:
         return [];
+    }
+  }
+
+  // Helper method untuk mendapatkan estimasi waktu baca
+  int getReadingTimeMinutes() {
+    // Asumsi rata-rata 200 kata per menit
+    final wordCount = content.split(' ').length;
+    return (wordCount / 200).ceil();
+  }
+
+  // Helper method untuk mendapatkan preview content
+  String getContentPreview({int maxLength = 300}) {
+    if (content.length <= maxLength) return content;
+    
+    // Cari titik terakhir dalam batas maxLength
+    int cutIndex = maxLength;
+    while (cutIndex > 0 && content[cutIndex] != ' ' && content[cutIndex] != '.') {
+      cutIndex--;
+    }
+    
+    return '${content.substring(0, cutIndex)}...';
+  }
+
+  // Helper method untuk format tanggal Indonesia
+  String getFormattedDate() {
+    final months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    
+    return '${publishedAt.day} ${months[publishedAt.month - 1]} ${publishedAt.year}';
+  }
+
+  // Helper method untuk format waktu relatif
+  String getRelativeTime() {
+    final now = DateTime.now();
+    final difference = now.difference(publishedAt);
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} menit lalu';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} jam lalu';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} hari lalu';
+    } else {
+      return getFormattedDate();
     }
   }
 }
