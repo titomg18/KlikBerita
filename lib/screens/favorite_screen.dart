@@ -310,7 +310,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: Colors.red[600],
+        backgroundColor: Colors.blue[600], // Changed from red to blue
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.white),
         actions: [
@@ -359,7 +359,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red[600]!),
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!), // Changed from red to blue
                   ),
                   SizedBox(height: 16),
                   Text('Memuat berita favorit...'),
@@ -400,7 +400,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                         icon: Icon(Icons.explore),
                         label: Text('Jelajahi Berita'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[600],
+                          backgroundColor: Colors.blue[600], // Changed from red to blue
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                           shape: RoundedRectangleBorder(
@@ -416,7 +416,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                     // Header info
                     Container(
                       width: double.infinity,
-                      color: Colors.red[600],
+                      color: Colors.blue[600], // Changed from red to blue
                       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       child: Text(
                         '${_favoriteNews.length} berita favorit',
@@ -432,6 +432,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                     Expanded(
                       child: RefreshIndicator(
                         onRefresh: _loadFavoriteNews,
+                        color: Colors.blue[600], // Changed from red to blue
                         child: ListView.builder(
                           padding: EdgeInsets.symmetric(vertical: 8),
                           itemCount: _favoriteNews.length,

@@ -317,50 +317,201 @@ class NewsService {
     }
   }
 
-  // Search news
+  // Search news - IMPROVED VERSION
   static Future<List<NewsModel>> searchNews(String query) async {
     try {
-      print('🔍 Searching news with query: $query');
+      print('🔍 Searching news with query: "$query"');
+      
+      if (query.trim().isEmpty) {
+        print('⚠️ Empty search query');
+        return [];
+      }
+      
+      final cleanQuery = query.trim();
       
       // Jika user belum login, search in mock data
       if (!AuthService.isLoggedIn) {
+        print('👤 User not logged in, searching in mock data');
+        final mockNews = _getMockNews();
+        final results = mockNews.where((news) =>
+          news.title.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.description.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.content.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.category.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.author.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.source.toLowerCase().contains(cleanQuery.toLowerCase())
+        ).toList();
+        
+        print('✅ Found ${results.length} results in mock data');
+        return results;
+      }
+      
+      // Test connection first
+      final connectionTest = await testConnection();
+      if (!connectionTest['success']) {
+        print('⚠️ Connection failed, searching in mock data');
         final mockNews = _getMockNews();
         return mockNews.where((news) =>
-          news.title.toLowerCase().contains(query.toLowerCase()) ||
-          news.description.toLowerCase().contains(query.toLowerCase()) ||
-          news.content.toLowerCase().contains(query.toLowerCase())
+          news.title.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.description.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.content.toLowerCase().contains(cleanQuery.toLowerCase())
         ).toList();
       }
       
-      // Search in database using PocketBase filter syntax
-      final result = await _pb.collection(collectionName).getList(
-        page: 1,
-        perPage: 50,
-        filter: 'berita ~ "$query" || detail_berita ~ "$query" || category ~ "$query"',
-        sort: '-created',
-      );
+      // Search in database using multiple approaches
+      List<NewsModel> allResults = [];
       
-      print('✅ Found ${result.items.length} news matching query');
+      // Approach 1: Search in title (berita field)
+      try {
+        print('🔍 Searching in title field...');
+        final titleResults = await _pb.collection(collectionName).getList(
+          page: 1,
+          perPage: 50,
+          filter: 'berita ~ "$cleanQuery"',
+          sort: '-created',
+        );
+        
+        print('📝 Found ${titleResults.items.length} results in title');
+        
+        for (var record in titleResults.items) {
+          try {
+            final news = NewsModel.fromPocketBase(record);
+            if (!allResults.any((existing) => existing.id == news.id)) {
+              allResults.add(news);
+            }
+          } catch (e) {
+            print('⚠️ Error parsing title search result ${record.id}: $e');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error searching in title: $e');
+      }
       
-      List<NewsModel> newsList = [];
-      for (var record in result.items) {
+      // Approach 2: Search in content (detail_berita field)
+      try {
+        print('🔍 Searching in content field...');
+        final contentResults = await _pb.collection(collectionName).getList(
+          page: 1,
+          perPage: 50,
+          filter: 'detail_berita ~ "$cleanQuery"',
+          sort: '-created',
+        );
+        
+        print('📝 Found ${contentResults.items.length} results in content');
+        
+        for (var record in contentResults.items) {
+          try {
+            final news = NewsModel.fromPocketBase(record);
+            if (!allResults.any((existing) => existing.id == news.id)) {
+              allResults.add(news);
+            }
+          } catch (e) {
+            print('⚠️ Error parsing content search result ${record.id}: $e');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error searching in content: $e');
+      }
+      
+      // Approach 3: Search in category
+      try {
+        print('🔍 Searching in category field...');
+        final categoryResults = await _pb.collection(collectionName).getList(
+          page: 1,
+          perPage: 50,
+          filter: 'category ~ "$cleanQuery"',
+          sort: '-created',
+        );
+        
+        print('📝 Found ${categoryResults.items.length} results in category');
+        
+        for (var record in categoryResults.items) {
+          try {
+            final news = NewsModel.fromPocketBase(record);
+            if (!allResults.any((existing) => existing.id == news.id)) {
+              allResults.add(news);
+            }
+          } catch (e) {
+            print('⚠️ Error parsing category search result ${record.id}: $e');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error searching in category: $e');
+      }
+      
+      // Approach 4: Try combined search if individual searches worked
+      if (allResults.isEmpty) {
         try {
-          final news = NewsModel.fromPocketBase(record);
-          newsList.add(news);
+          print('🔍 Trying combined search...');
+          final combinedResults = await _pb.collection(collectionName).getList(
+            page: 1,
+            perPage: 50,
+            filter: 'berita ~ "$cleanQuery" || detail_berita ~ "$cleanQuery" || category ~ "$cleanQuery"',
+            sort: '-created',
+          );
+          
+          print('📝 Found ${combinedResults.items.length} results in combined search');
+          
+          for (var record in combinedResults.items) {
+            try {
+              final news = NewsModel.fromPocketBase(record);
+              allResults.add(news);
+            } catch (e) {
+              print('⚠️ Error parsing combined search result ${record.id}: $e');
+            }
+          }
         } catch (e) {
-          print('⚠️ Error parsing search result ${record.id}: $e');
+          print('⚠️ Error in combined search: $e');
         }
       }
       
-      return newsList;
+      // Sort results by relevance (title matches first, then content, then category)
+      allResults.sort((a, b) {
+        final aTitle = a.title.toLowerCase().contains(cleanQuery.toLowerCase());
+        final bTitle = b.title.toLowerCase().contains(cleanQuery.toLowerCase());
+        
+        if (aTitle && !bTitle) return -1;
+        if (!aTitle && bTitle) return 1;
+        
+        // If both or neither match title, sort by date
+        return b.publishedAt.compareTo(a.publishedAt);
+      });
+      
+      print('✅ Total unique search results: ${allResults.length}');
+      
+      // If no results from database, try mock data as fallback
+      if (allResults.isEmpty) {
+        print('📰 No results from database, searching mock data');
+        final mockNews = _getMockNews();
+        return mockNews.where((news) =>
+          news.title.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.description.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.content.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.category.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.author.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          news.source.toLowerCase().contains(cleanQuery.toLowerCase())
+        ).toList();
+      }
+      
+      return allResults;
+      
     } catch (e) {
       print('❌ Error searching news: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      if (e is ClientException) {
+        print('❌ ClientException response: ${e.response}');
+      }
+      
       // Fallback to mock data search
+      print('📰 Falling back to mock data search');
       final mockNews = _getMockNews();
       return mockNews.where((news) =>
         news.title.toLowerCase().contains(query.toLowerCase()) ||
         news.description.toLowerCase().contains(query.toLowerCase()) ||
-        news.content.toLowerCase().contains(query.toLowerCase())
+        news.content.toLowerCase().contains(query.toLowerCase()) ||
+        news.category.toLowerCase().contains(query.toLowerCase()) ||
+        news.author.toLowerCase().contains(query.toLowerCase()) ||
+        news.source.toLowerCase().contains(query.toLowerCase())
       ).toList();
     }
   }
@@ -559,6 +710,185 @@ Para analis optimis bahwa momentum pertumbuhan ini dapat dipertahankan hingga ak
         author: 'Sari Ekonomi',
         publishedAt: DateTime.now().subtract(Duration(hours: 8)),
         source: 'KlikBerita Finance',
+      ),
+      NewsModel(
+        id: '4',
+        title: 'Pendidikan Digital Transformasi Pembelajaran Modern',
+        description: 'Revolusi digital dalam pendidikan membawa perubahan fundamental dalam cara siswa belajar dan guru mengajar di era modern.',
+        content: '''
+Transformasi digital dalam dunia pendidikan telah mengubah paradigma pembelajaran tradisional. Teknologi digital tidak hanya menjadi alat bantu, tetapi telah menjadi bagian integral dari proses pendidikan modern.
+
+## Platform Pembelajaran Digital
+
+### E-Learning Interaktif
+Platform pembelajaran online kini menawarkan pengalaman belajar yang lebih interaktif dengan fitur:
+- Video pembelajaran berkualitas tinggi
+- Simulasi dan laboratorium virtual
+- Gamifikasi untuk meningkatkan engagement
+- Assessment otomatis dengan feedback real-time
+
+### Artificial Intelligence dalam Pendidikan
+AI memungkinkan personalisasi pembelajaran yang disesuaikan dengan:
+- Gaya belajar individual siswa
+- Kecepatan pemahaman masing-masing
+- Identifikasi area yang perlu diperkuat
+- Rekomendasi materi pembelajaran
+
+## Dampak Positif
+
+### Aksesibilitas
+- Pembelajaran dapat diakses kapan saja, di mana saja
+- Mengatasi keterbatasan geografis
+- Biaya pendidikan yang lebih terjangkau
+- Inklusivitas untuk siswa berkebutuhan khusus
+
+### Efektivitas
+- Pembelajaran yang lebih engaging
+- Tracking progress yang akurat
+- Kolaborasi global antar siswa
+- Update materi yang real-time
+
+## Tantangan Implementasi
+
+### Infrastruktur
+- Ketersediaan internet yang stabil
+- Perangkat teknologi yang memadai
+- Literasi digital guru dan siswa
+- Dukungan teknis yang berkelanjutan
+
+### Aspek Sosial
+- Interaksi sosial yang terbatas
+- Digital divide antar daerah
+- Ketergantungan pada teknologi
+- Keamanan data dan privasi
+
+## Masa Depan Pendidikan
+
+Pendidikan digital akan terus berkembang dengan:
+- Virtual Reality untuk pengalaman immersive
+- Blockchain untuk verifikasi kredensial
+- IoT untuk smart classroom
+- Big Data untuk analisis pembelajaran
+
+## Kesimpulan
+
+Transformasi digital dalam pendidikan adalah keniscayaan yang harus diadaptasi dengan bijak. Kombinasi antara teknologi dan pendekatan humanis akan menciptakan ekosistem pembelajaran yang optimal untuk generasi masa depan.
+        ''',
+        imageUrl: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&h=400&fit=crop',
+        category: 'Pendidikan',
+        author: 'Prof. Siti Pendidikan',
+        publishedAt: DateTime.now().subtract(Duration(hours: 12)),
+        source: 'KlikBerita Edu',
+      ),
+      NewsModel(
+        id: '5',
+        title: 'Wisata Berkelanjutan Menjadi Tren Global',
+        description: 'Konsep sustainable tourism semakin populer sebagai respons terhadap dampak lingkungan dari industri pariwisata konvensional.',
+        content: '''
+Industri pariwisata global sedang mengalami transformasi menuju praktik yang lebih berkelanjutan. Sustainable tourism atau wisata berkelanjutan kini menjadi prioritas utama dalam pengembangan destinasi wisata di seluruh dunia.
+
+## Konsep Wisata Berkelanjutan
+
+### Prinsip Dasar
+Wisata berkelanjutan berfokus pada:
+- Pelestarian lingkungan alam
+- Pemberdayaan masyarakat lokal
+- Viabilitas ekonomi jangka panjang
+- Pengalaman autentik bagi wisatawan
+
+### Implementasi Praktis
+- Penggunaan energi terbarukan
+- Pengelolaan limbah yang bertanggung jawab
+- Konservasi air dan sumber daya alam
+- Promosi budaya lokal
+
+## Destinasi Berkelanjutan di Indonesia
+
+### Raja Ampat, Papua Barat
+- Program konservasi terumbu karang
+- Pembatasan jumlah wisatawan
+- Keterlibatan masyarakat dalam pengelolaan
+- Edukasi lingkungan untuk pengunjung
+
+### Taman Nasional Komodo
+- Perlindungan habitat komodo
+- Eco-lodge dengan standar internasional
+- Program penelitian dan konservasi
+- Sustainable diving practices
+
+### Desa Wisata Penglipuran, Bali
+- Preservasi arsitektur tradisional
+- Zero waste village concept
+- Organic farming practices
+- Cultural immersion programs
+
+## Manfaat Ekonomi
+
+### Untuk Masyarakat Lokal
+- Penciptaan lapangan kerja
+- Peningkatan pendapatan
+- Pengembangan UMKM
+- Transfer skill dan knowledge
+
+### Untuk Negara
+- Diversifikasi ekonomi
+- Peningkatan devisa
+- Branding positif internasional
+- Investasi infrastruktur berkelanjutan
+
+## Tantangan dan Solusi
+
+### Tantangan
+- Biaya implementasi yang tinggi
+- Resistensi terhadap perubahan
+- Kurangnya awareness wisatawan
+- Koordinasi antar stakeholder
+
+### Solusi
+- Insentif pemerintah untuk praktik berkelanjutan
+- Edukasi dan kampanye awareness
+- Sertifikasi dan standar internasional
+- Kemitraan public-private
+
+## Teknologi Pendukung
+
+### Digital Innovation
+- Smart destination management
+- Carbon footprint tracking
+- Virtual reality untuk pre-visit experience
+- Mobile apps untuk sustainable travel
+
+### Green Technology
+- Solar power untuk akomodasi
+- Electric vehicle untuk transportasi
+- Water treatment systems
+- Waste-to-energy solutions
+
+## Tren Masa Depan
+
+Wisata berkelanjutan akan berkembang dengan:
+- Regenerative tourism concept
+- Climate-positive destinations
+- Hyper-local experiences
+- Wellness dan mindful travel
+
+## Peran Wisatawan
+
+Wisatawan dapat berkontribusi dengan:
+- Memilih akomodasi ramah lingkungan
+- Menghormati budaya lokal
+- Mengurangi jejak karbon
+- Mendukung ekonomi lokal
+
+## Kesimpulan
+
+Wisata berkelanjutan bukan hanya tren, tetapi kebutuhan mendesak untuk menjaga planet ini untuk generasi mendatang. Kolaborasi semua pihak diperlukan untuk mewujudkan industri pariwisata yang bertanggung jawab dan berkelanjutan.
+        ''',
+        imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop',
+        category: 'Wisata',
+        author: 'Andi Wisata',
+        publishedAt: DateTime.now().subtract(Duration(hours: 18)),
+        source: 'KlikBerita Travel',
       ),
     ];
   }
