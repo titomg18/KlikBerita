@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/Auth.dart';
 import '../home_screen.dart';
 import 'register_screen.dart';
+import '../../services/favorite_service.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -37,6 +38,13 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (result['success']) {
+        // Initialize favorites after successful login
+        try {
+          await FavoriteService.syncFavoritesOnLogin();
+        } catch (e) {
+          print('⚠️ Error syncing favorites: $e');
+        }
+        
         // Login berhasil, navigasi ke home screen
         Navigator.pushAndRemoveUntil(
           context,

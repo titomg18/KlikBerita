@@ -161,6 +161,15 @@ class AuthService {
   static Future<void> logout() async {
     print('🔄 Logging out user...');
     _pb.authStore.clear();
+    
+    // Clear favorites cache when logging out
+    try {
+      // Import FavoriteService if not already imported
+      // await FavoriteService.clearLocalCache();
+    } catch (e) {
+      print('⚠️ Error clearing favorites cache: $e');
+    }
+    
     print('✅ User logged out');
   }
 

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/news_model.dart';
+import '../models/comment_model.dart';
 import '../services/news_service.dart';
 import '../services/favorite_service.dart';
+import '../services/comment_service.dart';
+import '../services/Auth.dart';
+import 'Auth/login_screen.dart';
 
 class NewsDetailScreen extends StatefulWidget {
   final String newsId;
@@ -17,14 +21,28 @@ class NewsDetailScreen extends StatefulWidget {
 
 class _NewsDetailScreenState extends State<NewsDetailScreen> {
   NewsModel? _news;
+  List<CommentModel> _comments = [];
   bool _isLoading = true;
+  bool _isLoadingComments = false;
   bool _isFavorite = false;
+  bool _isAddingComment = false;
   final double _imageHeight = 280.0;
+  
+  final _commentController = TextEditingController();
+  final _commentFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _loadNewsDetail();
+    _loadComments();
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    _commentFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadNewsDetail() async {
@@ -72,6 +90,155 @@ class _NewsDetailScreenState extends State<NewsDetailScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _loadComments() async {
+    setState(() {
+      _isLoadingComments = true;
+    });
+
+    try {
+      final comments = await CommentService.getCommentsByNewsId(widget.newsId);
+      setState(() {
+        _comments = comments;
+        _isLoadingComments = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingComments = false;
+      });
+      print('Error loading comments: $e');
+    }
+  }
+
+  Future<void> _addComment() async {
+    if (!AuthService.isLoggedIn) {
+      _showLoginDialog();
+      return;
+    }
+
+    final commentText = _commentController.text.trim();
+    if (commentText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Komentar tidak boleh kosong'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isAddingComment = true;
+    });
+
+    try {
+      final result = await CommentService.addComment(
+        newsId: widget.newsId,
+        commentText: commentText,
+      );
+
+      if (result['success']) {
+        _commentController.clear();
+        _commentFocusNode.unfocus();
+        await _loadComments(); // Reload comments
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isAddingComment = false;
+      });
+    }
+  }
+
+  Future<void> _deleteComment(CommentModel comment) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Hapus Komentar'),
+        content: Text('Apakah Anda yakin ingin menghapus komentar ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      try {
+        final result = await CommentService.deleteComment(comment.id);
+        
+        if (result['success']) {
+          await _loadComments(); // Reload comments
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menghapus komentar'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showLoginDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Login Diperlukan'),
+        content: Text('Anda harus login untuk menambahkan komentar'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => LoginScreen()),
+              );
+            },
+            child: Text('Login'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _toggleFavorite() async {
@@ -140,6 +307,315 @@ class _NewsDetailScreenState extends State<NewsDetailScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCommentItem(CommentModel comment) {
+    final isOwner = AuthService.isLoggedIn && 
+                   comment.userId == AuthService.currentUser!.id;
+    
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // User info and actions
+          Row(
+            children: [
+              // Avatar
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: comment.getAvatarColor(),
+                child: Text(
+                  comment.getUserInitials(),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              
+              SizedBox(width: 12),
+              
+              // User name and time
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      comment.userName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                    Text(
+                      comment.getStatus(),
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Actions for comment owner
+              if (isOwner)
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _deleteComment(comment);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.red, size: 20),
+                          SizedBox(width: 8),
+                          Text('Hapus'),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: Icon(
+                    Icons.more_vert,
+                    color: Colors.grey[600],
+                  ),
+                ),
+            ],
+          ),
+          
+          SizedBox(height: 12),
+          
+          // Comment text
+          Text(
+            comment.comment,
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey[800],
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentSection() {
+    return Container(
+      color: Colors.grey[50],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Comments header
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(color: Colors.grey[200]!),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.comment, color: Colors.blue[600]),
+                SizedBox(width: 8),
+                Text(
+                  'Komentar (${_comments.length})',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                Spacer(),
+                if (_isLoadingComments)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+          ),
+          
+          // Add comment section
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(color: Colors.grey[200]!),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (AuthService.isLoggedIn) ...[
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.blue[600],
+                        child: Text(
+                          AuthService.currentUser!.getStringValue('name')
+                              .substring(0, 1).toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Tulis komentar sebagai ${AuthService.currentUser!.getStringValue('name')}',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12),
+                  TextField(
+                    controller: _commentController,
+                    focusNode: _commentFocusNode,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Tulis komentar Anda...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.blue[600]!),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          _commentFocusNode.unfocus();
+                        },
+                        child: Text('Batal'),
+                      ),
+                      SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _isAddingComment ? null : _addComment,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[600],
+                          foregroundColor: Colors.white,
+                        ),
+                        child: _isAddingComment
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text('Kirim'),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue[600]),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Login untuk menambahkan komentar',
+                            style: TextStyle(color: Colors.blue[800]),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => LoginScreen()),
+                            );
+                          },
+                          child: Text('Login'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          
+          // Comments list
+          if (_comments.isEmpty && !_isLoadingComments)
+            Container(
+              padding: EdgeInsets.all(32),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.comment_outlined,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Belum ada komentar',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Jadilah yang pertama berkomentar!',
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: _comments.map((comment) => _buildCommentItem(comment)).toList(),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -701,7 +1177,6 @@ class _NewsDetailScreenState extends State<NewsDetailScreen> {
                     ];
                   },
                   body: SingleChildScrollView(
-                    padding: EdgeInsets.only(bottom: 20),
                     child: Column(
                       children: [
                         Padding(
@@ -722,6 +1197,8 @@ class _NewsDetailScreenState extends State<NewsDetailScreen> {
                           ),
                         ),
                         _buildFooter(),
+                        SizedBox(height: 16),
+                        _buildCommentSection(),
                       ],
                     ),
                   ),

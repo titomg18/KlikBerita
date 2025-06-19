@@ -100,8 +100,16 @@ class _HomeScreenState extends State<HomeScreen> {
       
       print('✅ Data loading completed successfully');
       
-      // Show success message if user is logged in and got real data
+      // Add this after the successful data loading
       if (AuthService.isLoggedIn && news.isNotEmpty && news.first.id != '1') {
+        // Initialize favorites for logged in user
+        try {
+          await FavoriteService.initializeFavorites();
+          print('✅ Favorites initialized for user');
+        } catch (e) {
+          print('⚠️ Error initializing favorites: $e');
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ Berhasil memuat ${news.length} berita dari database'),
